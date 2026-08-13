@@ -1,0 +1,175 @@
+
+(日本語版: [README.jp.md](README.jp.md))
+
+# Purpose
+
+This repository is a minimal, self-contained Docker Compose setup for running
+[Hermes Agent](https://github.com/NousResearch/hermes-agent) against a locally hosted LLM served by
+`llama.cpp` (CUDA backend), instead of a hosted model API. It's kept deliberately small so it can be
+shared and read end-to-end as a reference.
+
+# Tested environment
+
+- OS: Ubuntu 26.04 LTS
+- CPU: Intel Xeon E-2276ME @ 2.80GHz (6 cores / 12 threads)
+- RAM: 30GB
+- GPU: NVIDIA Quadro P2200 (5GB VRAM), driver 580.173.02
+
+# Prerequisites
+
+The host needs the NVIDIA driver, Docker Engine, and the NVIDIA Container Toolkit installed before
+following the steps below (no driver is needed inside the container).
+
+## Check the NVIDIA driver is installed
+
+```bash
+nvidia-smi
+```
+You're good if this prints GPU info. If not, install the driver first.
+Install driver 580 — it's the last full-feature driver branch for the Pascal generation, since 590 and
+later drop Pascal support, so it needs to be pinned to this version.
+```bash
+sudo apt install nvidia-driver-580
+# reboot
+sudo reboot
+```
+
+After rebooting, GPU info should show up again:
+
+```bash
+nvidia-smi
+```
+
+## Install Docker Engine (from the official repository)
+
+Use the official APT package, not the snap package. The snap package is sandboxed and can't access the
+GPU device files, so GPU passthrough fails.
+
+```bash
+sudo apt update
+sudo apt install -y ca-certificates curl gnupg
+
+# add the official GPG key
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+# add the repository
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# install
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# Ubuntu 26 doesn't ship newgrp by default, so install it
+sudo usermod -aG docker $USER
+sudo apt install -y util-linux-extra
+newgrp docker
+```
+
+## NVIDIA Container Toolkit
+
+```bash
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
+  sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+  sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+  sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+
+sudo apt update
+sudo apt install -y nvidia-container-toolkit
+
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+```
+
+# Model files
+
+`models/` holds the GGUF model files that `compose.e4b-qat.yml` mounts into the `llama-server`
+container; it's gitignored, so nothing under it is tracked by this repository. Download the following
+three files from [unsloth/gemma-4-E4B-it-qat-GGUF](https://huggingface.co/unsloth/gemma-4-E4B-it-qat-GGUF)
+on Hugging Face and place them as shown:
+
+```
+models/gemma-4-E4B-it-qat/
+├── gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf   # main model (4-bit dynamic quant)
+├── mmproj-F16.gguf                      # multimodal projector
+└── mtp-gemma-4-E4B-it.gguf              # multi-token-prediction draft model
+```
+
+# Initial setup
+```bash
+mkdir .hermes
+cp config.yaml .hermes/
+```
+
+# Configure the environment
+
+`docker-compose.yml` marks these as required, and `docker compose` validates the whole file — including
+the `hermes` service's env vars — for every subcommand, even `build`. So export these first, before the
+build step below.
+
+```bash
+export COMPOSE_FILE=docker-compose.yml:compose.e4b-qat.yml
+export HERMES_DASHBOARD_BASIC_AUTH_USERNAME=admin
+export HERMES_DASHBOARD_BASIC_AUTH_PASSWORD= # pass word
+```
+
+# Build
+```bash
+docker compose build llama-server
+docker compose pull hermes
+```
+
+# Run
+```bash
+docker compose up -d
+```
+
+# About the healthcheck / supervisor
+
+There are reports of `/health` continuing to return OK while an inference slot hangs
+([llama.cpp#20921](https://github.com/ggml-org/llama.cpp/issues/20921)). The issue is closed, but no root
+cause was identified and no fix or workaround has confirmed effectiveness, so it can still recur
+intermittently. To handle this, this repository monitors the `/slots` endpoint's progress (healthy as
+long as any one of `id_task` / `n_prompt_tokens_processed` / `n_decoded` is moving) and restarts the
+whole container when a hang is detected (`healthcheck-slots.sh` / `supervisor.sh`).
+
+`/slots` can time out for up to ~48 seconds even during normal prefill (distinguishable because `/health`
+still responds instantly). So a single timeout is not treated as a failure — only when there has been no
+response at all for `SLOT_STALL_SECONDS` seconds (default 180) is it marked unhealthy.
+
+`supervisor.sh` runs llama-server as a child process; once it detects the stall above, it SIGKILLs the
+child and exits, taking the container down (`restart: unless-stopped` lets compose recreate it). It
+avoids using `docker.sock` because sharing that socket effectively grants host-root-equivalent privileges.
+Running llama-server as a child process rather than as PID 1 also means it can be reliably SIGKILLed from
+within the container.
+
+### Watchdog timing thresholds
+
+These control when a stall is detected and the container gets restarted. They haven't been verified to
+be optimal, just values that seemed reasonable. Set them too short and a temporary slowdown can be
+misdetected as a stall, triggering an unnecessary restart; set them too long and a real hang takes longer
+to detect and recover from.
+
+| Env var | Default | Description |
+|---|---|---|
+| `SLOT_STALL_SECONDS` | 180 | Seconds of no progress/no response before it's considered a stall |
+| `WATCH_POLL_SECONDS` | 30 | Supervisor polling interval |
+| `WATCH_START_PERIOD` | 120 | Grace period (seconds) after startup before monitoring begins |
+
+### Other variables
+
+Paths and URLs the scripts use — not tuning knobs, just either correct or not for how the container is
+built.
+
+| Env var | Default | Description |
+|---|---|---|
+| `LLAMA_URL` | `http://localhost:8080` | URL of llama-server |
+| `SLOT_STATE_FILE` | `/tmp/llama-slots-watch` | State file used to track progress |
+| `LLAMA_SLOTS_FIXTURE` | (none) | For testing. If set, this file's content is used as the `/slots` response |
+| `LLAMA_BIN` | `/app/llama-server` | Path to the llama-server binary |

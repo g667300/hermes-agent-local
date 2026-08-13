@@ -1,0 +1,61 @@
+services:
+  llama-server:
+    build:
+      context: .
+    image: hermes-llama-server:local
+    container_name: llama-server
+    environment:
+      - WATCH_POLL_SECONDS=30     # monitoring interval
+      - WATCH_START_PERIOD=120    # grace period right after startup (model loading)
+      - SLOT_STALL_SECONDS=180    # stall-detection threshold (defaults unverified, see README)
+    volumes:
+      - ./models:/models
+    healthcheck:
+      test: ["CMD", "sh", "/healthcheck-slots.sh"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 120s
+    networks:
+      - llm-net
+    deploy:
+      resources:
+        limits:
+          memory: 8g
+        reservations:
+          memory: 2g
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]
+    restart: unless-stopped
+  hermes:
+    image: nousresearch/hermes-agent:latest
+    container_name: hermes
+    restart: unless-stopped
+    command: gateway run
+    ports:
+      - "9119:9119"
+    environment:
+      - HERMES_DASHBOARD=1
+      - HERMES_DASHBOARD_HOST=0.0.0.0
+      - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=${HERMES_DASHBOARD_BASIC_AUTH_USERNAME:?set it in .env}
+      - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD:?set it in .env}
+    volumes:
+      - ./.hermes:/opt/data
+      - ./.hermes-web:/opt/hermes/web
+    networks:
+      - llm-net
+      - hermes-net
+    depends_on:
+      - llama-server
+    deploy:
+      resources:
+        limits:
+          memory: 8g
+networks:
+  llm-net:
+    driver: bridge
+    internal: true
+  hermes-net:
+    driver: bridge

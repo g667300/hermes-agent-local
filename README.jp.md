@@ -1,0 +1,169 @@
+
+(English: [README.md](README.md))
+
+# 目的
+
+本リポジトリは、ホスト型のAPIではなく、ローカルで動かす `llama.cpp`（CUDAバックエンド）をバックエンドとして [Hermes Agent](https://github.com/NousResearch/hermes-agent) を動かすための、最小限の Docker Compose 構成です。
+投稿・共有して最初から最後まで読み通せるよう、あえてファイル構成を単純にしています。
+
+# 動作確認環境
+
+- OS: Ubuntu 26.04 LTS
+- CPU: Intel Xeon E-2276ME @ 2.80GHz (6コア / 12スレッド)
+- RAM: 32GB
+- GPU: NVIDIA Quadro P2200 (VRAM 5GB), driver 580.173.02
+
+# 事前準備
+
+以下の手順を実行する前に、ホスト側にNVIDIAドライバ・Docker Engine・NVIDIA Container Toolkitをインストールしておく必要があります（コンテナ内にはドライバは不要です）。
+
+## NVIDIAドライバのインストール確認
+
+```bash
+nvidia-smi
+```
+これでGPU情報が表示されればOKです。
+表示されない場合は先にドライバを入れてください。
+ドライバは580を入れてください。
+P2200はPascal世代のGPUです。
+580はPascal世代への最後のフル機能ドライバブランチで、590以降はPascalのサポートが打ち切られているため、このバージョンに固定する必要があります。
+```bash
+sudo apt install nvidia-driver-580
+# 再起動
+sudo reboot
+```
+
+再起動後にGPU情報が表示されればOKです。
+
+```bash
+nvidia-smi
+```
+
+## Docker Engineのインストール（公式リポジトリから）
+
+Snap版ではなく公式APT版を使うのが重要です。
+Snap版はサンドボックス化されており、GPUデバイスファイルにアクセスできずGPU連携が失敗します。
+
+```bash
+sudo apt update
+sudo apt install -y ca-certificates curl gnupg
+
+# 公式GPGキー追加
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+# リポジトリ追加
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# install
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# ubuntu 26ではnewgrpが無いので入れる
+sudo usermod -aG docker $USER
+sudo apt install -y util-linux-extra
+newgrp docker
+```
+
+## NVIDIA Container Toolkit
+
+```bash
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
+  sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+  sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+  sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+
+sudo apt update
+sudo apt install -y nvidia-container-toolkit
+
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+```
+
+# モデルファイル
+
+`models/` には `compose.e4b-qat.yml` が `llama-server` コンテナにマウントするGGUFモデルファイルを
+配置します。gitignore対象なので本リポジトリには含まれません。以下の3ファイルをHugging Faceの
+[unsloth/gemma-4-E4B-it-qat-GGUF](https://huggingface.co/unsloth/gemma-4-E4B-it-qat-GGUF) から
+ダウンロードし、以下のように配置してください。
+
+```
+models/gemma-4-E4B-it-qat/
+├── gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf   # 本体モデル（4bit動的量子化）
+├── mmproj-F16.gguf                      # マルチモーダル用プロジェクタ
+└── mtp-gemma-4-E4B-it.gguf              # Multi-Token Prediction用ドラフトモデル
+```
+
+# 初期設定
+```bash
+mkdir .hermes
+cp config.yaml .hermes/
+```
+
+# 環境変数の設定
+
+`docker-compose.yml` はこれらを必須項目にしているため、`docker compose` は `build` を含むどの
+サブコマンドでも `hermes` サービスの環境変数も含めてファイル全体を検証します。
+そのため、下のbuild手順より先に以下をexportしてください。
+
+```bash
+export COMPOSE_FILE=docker-compose.yml:compose.e4b-qat.yml
+export HERMES_DASHBOARD_BASIC_AUTH_USERNAME=admin
+export HERMES_DASHBOARD_BASIC_AUTH_PASSWORD= # pass word
+```
+
+# build
+```bash
+docker compose build llama-server
+docker compose pull hermes
+```
+
+# 実行
+```bash
+docker compose up -d
+```
+
+# healthcheck / supervisor について
+
+`/health` が OK を返し続けたまま推論スロットがハングする現象が起こりました。
+同様の報告されています（[llama.cpp#20921](https://github.com/ggml-org/llama.cpp/issues/20921)）。
+issueはクローズ済みですが、根本原因の特定や有効性が確認された修正・回避策はなく、間欠的に再発しうる状態です。
+そのため本リポジトリでは `/slots` エンドポイントの進捗（`id_task` / `n_prompt_tokens_processed` / `n_decoded` のいずれかが動いていれば健全）を監視し、ハングを検知したらコンテナごと再起動する方式（`healthcheck-slots.sh` / `supervisor.sh`）で対応しています。
+
+`/slots` は正常な prefill 中でも最大48秒程度タイムアウトすることがあります（`/health` は即座に応答するため区別可能）。
+そのため単発のタイムアウトでは判定せず、応答が `SLOT_STALL_SECONDS` 秒（既定180秒）まったく返らない場合のみ unhealthy とします。
+
+`supervisor.sh` は llama-server を子プロセスとして起動し、上記のストールを検知したら子プロセスを SIGKILL してコンテナごと終了させます（`restart: unless-stopped` により compose が作り直します）。
+`docker.sock` を使わない設計にしているのは、ソケットの共有がホスト root 相当の権限を渡すことになるためです。
+また llama-server を PID 1 ではなく子プロセスとして起動しているため、内部からの SIGKILL で確実に終了させられます。
+
+### watchdog のタイミング系閾値
+
+ストールを検知してコンテナを再起動するタイミングを制御する変数です。
+これらの値が最適であることは確認できていません（妥当そうな値を仮に置いているだけです）。
+短すぎると一時的な遅延をストールと誤判定し、不要な再起動が起きます。
+長すぎると実際のハングを検知して復旧するまでの時間が延びます。
+
+| 環境変数 | 既定値 | 説明 |
+|---|---|---|
+| `SLOT_STALL_SECONDS` | 180 | 無進捗/無応答をストールとみなすまでの秒数 |
+| `WATCH_POLL_SECONDS` | 30 | supervisor の監視間隔 |
+| `WATCH_START_PERIOD` | 120 | 起動直後、監視を始めるまでの猶予秒 |
+
+### それ以外の変数
+
+スクリプトが使うパスやURLです。
+チューニング対象ではなく、コンテナの構成上、正誤が決まっているだけの値です。
+
+| 環境変数 | 既定値 | 説明 |
+|---|---|---|
+| `LLAMA_URL` | `http://localhost:8080` | llama-server の URL |
+| `SLOT_STATE_FILE` | `/tmp/llama-slots-watch` | 進捗を記録する状態ファイル |
+| `LLAMA_SLOTS_FIXTURE` | (なし) | テスト用。指定するとこのファイルを `/slots` の応答として使う |
+| `LLAMA_BIN` | `/app/llama-server` | llama-server 本体のパス |

@@ -1,0 +1,9 @@
+
+model:
+  default: gemma-4-E4B-it-qat
+  provider: llama-local
+custom_providers:
+  - name: llama-local
+    base_url: http://llama-server:8080/v1
+    api_key: none
+    model: gemma-4-E4B-it-qat
