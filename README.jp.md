@@ -210,18 +210,13 @@ sudo mount -o loop .hermes-data.img .hermes-data
 
 `docker-compose.yml` は `HERMES_DASHBOARD_BASIC_AUTH_USERNAME`/`PASSWORD` を必須項目にしているため、
 `docker compose` は `build` を含むどのサブコマンドでも `hermes` サービスの環境変数も含めてファイル
-全体を検証します。Docker Composeはプロジェクトルートの`.env`ファイルを変数展開に自動で読み込むので、
-毎回exportする代わりにサンプルをコピーして編集してください。
+全体を検証します。`.env.sample`には`COMPOSE_FILE`も設定済みで、これは`docker compose`が`.env`から
+自動で読み込みます（変数展開用途だけではありません）。毎回exportする代わりにサンプルをコピーして
+認証情報を編集してください。
 
 ```bash
 cp .env.sample .env
 $EDITOR .env  # 自分のusername/passwordを設定
-```
-
-`COMPOSE_FILE`はシェルごとに引き続き以下のexportが必要です。
-
-```bash
-export COMPOSE_FILE=docker-compose.yml:compose.e4b-qat.yml
 ```
 
 # build

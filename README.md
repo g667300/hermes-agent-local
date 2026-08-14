@@ -208,18 +208,13 @@ sudo mount -o loop .hermes-data.img .hermes-data
 
 `docker-compose.yml` marks `HERMES_DASHBOARD_BASIC_AUTH_USERNAME`/`PASSWORD` as required, and
 `docker compose` validates the whole file — including the `hermes` service's env vars — for every
-subcommand, even `build`. Docker Compose automatically reads a `.env` file in the project root for
-variable substitution, so copy the sample and edit it instead of exporting them by hand every time:
+subcommand, even `build`. `.env.sample` also sets `COMPOSE_FILE`, which `docker compose` reads
+automatically from `.env` (it's not just used for variable substitution). Copy it and fill in the
+credentials instead of exporting everything by hand every time:
 
 ```bash
 cp .env.sample .env
 $EDITOR .env  # set your own username/password
-```
-
-`COMPOSE_FILE` still needs to be exported per shell:
-
-```bash
-export COMPOSE_FILE=docker-compose.yml:compose.e4b-qat.yml
 ```
 
 # Build
