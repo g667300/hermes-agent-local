@@ -113,6 +113,13 @@ point (`./.hermes-data`), split into subdirectories underneath it:
 - `./.hermes-data/hermes` → the container's `/opt/data`
 - `./.hermes-data/web` → the container's `/opt/hermes/web`
 
+Why a loopback image rather than `tmpfs` or a Docker volume's `--storage-opt size=`: this data
+(dashboard config, history, web assets) needs to survive container restarts and host reboots, which
+rules out `tmpfs` (RAM-backed, gone on restart). `--storage-opt size=` was also considered, but it
+only works when the backing filesystem is XFS with project quotas (or for `tmpfs`-type volumes);
+this repo's tested environment is ext4, where that option isn't available. A loopback ext4 image
+works regardless of the host filesystem and persists to disk.
+
 ## First-time setup
 
 ```bash
@@ -128,7 +135,13 @@ mkdir -p .hermes-data
 # 4. Loop-mount it (requires root)
 sudo mount -o loop .hermes-data.img .hermes-data
 
-# 5. Chown it to yourself (so the container's runtime user can write to it)
+# 5. Chown it to yourself, purely so the mkdir/cp steps below don't need sudo.
+#    It does NOT need to match any UID inside the container: the hermes image runs its
+#    process as root (`docker inspect nousresearch/hermes-agent:latest --format
+#    '{{.Config.User}}'`) with no user-namespace remap, so it bypasses host file
+#    permissions entirely and can write here regardless of ownership. One consequence:
+#    files it creates from then on will show up owned by root on the host, so later
+#    inspection/cleanup under .hermes-data/hermes may need sudo.
 sudo chown "$(id -u):$(id -g)" .hermes-data
 
 # 6. Create the subdirectories

@@ -113,6 +113,14 @@ models/gemma-4-E4B-it-qat/
 - `./.hermes-data/hermes` → コンテナの `/opt/data`
 - `./.hermes-data/web` → コンテナの `/opt/hermes/web`
 
+`tmpfs`やDocker volumeの`--storage-opt size=`ではなくループバックイメージを選んだ理由:
+このデータ（dashboardの設定・履歴・web資産）はコンテナ再起動やホスト再起動をまたいで
+永続化する必要があり、これは`tmpfs`（RAM上に載るため再起動で消える）では満たせません。
+`--storage-opt size=`も検討しましたが、これはバッキングファイルシステムがXFS＋project
+quota（または`tmpfs`タイプのvolume）の場合しか使えず、本リポジトリの動作確認環境である
+ext4では利用できません。ループバックのext4イメージであればホスト側のファイルシステムに
+依存せず、ディスクに永続化できます。
+
 ## 初回セットアップ
 
 ```bash
@@ -128,7 +136,13 @@ mkdir -p .hermes-data
 # 4. ループマウント（root権限が必要）
 sudo mount -o loop .hermes-data.img .hermes-data
 
-# 5. 自分の所有に変更（コンテナ起動ユーザーが書き込めるように）
+# 5. 自分の所有に変更する。これは純粋に、以降のmkdir/cp手順をsudo無しで行うため。
+#    コンテナ内のUIDと一致させる必要は無い: hermesイメージはプロセスをroot権限で
+#    起動しており（`docker inspect nousresearch/hermes-agent:latest --format
+#    '{{.Config.User}}'`で確認可）、user-namespaceのremapも無いため、ホスト側の
+#    ファイル権限チェックを素通りしてどのみち書き込める。副作用として、以降コンテナが
+#    作成するファイルはホスト上でroot所有になるので、.hermes-data/hermes配下を後から
+#    確認・削除する際にsudoが要る場合がある。
 sudo chown "$(id -u):$(id -g)" .hermes-data
 
 # 6. サブディレクトリを作成
