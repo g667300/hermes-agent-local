@@ -88,10 +88,11 @@ sudo systemctl restart docker
 
 # モデルファイル
 
-`models/` には `compose.e4b-qat.yml` が `llama-server` コンテナにマウントするGGUFモデルファイルを
-配置します。gitignore対象なので本リポジトリには含まれません。以下の3ファイルをHugging Faceの
-[unsloth/gemma-4-E4B-it-qat-GGUF](https://huggingface.co/unsloth/gemma-4-E4B-it-qat-GGUF) から
-ダウンロードし、以下のように配置してください。
+`models/` には `compose.e4b-qat.yml` が `llama-server` コンテナにマウントするGGUFモデルファイルを配置します。
+gitignore対象なので本リポジトリには含まれません。
+以下の3ファイルをHugging Faceの
+[unsloth/gemma-4-E4B-it-qat-GGUF](https://huggingface.co/unsloth/gemma-4-E4B-it-qat-GGUF)からダウンロードし、
+以下のように配置してください。
 
 ```
 models/gemma-4-E4B-it-qat/
@@ -102,24 +103,22 @@ models/gemma-4-E4B-it-qat/
 
 # 初期設定
 
-`./.hermes-data`はただのbind mountなので、docker-compose側の設定だけではサイズ上限を
-掛けられません。Hermesが暴走してログ/DBを書き続けてもホストディスクを食い潰さないよう、
-固定サイズのループバックイメージ（ext4でフォーマットしたファイル）を用意し、そこに
-マウントして容量上限を強制します。
+`./.hermes-data`はただのbind mountなので、docker-compose側の設定だけではサイズ上限を掛けられません。
+Hermesが暴走してログ/DBを書き続けてもホストディスクを食い潰さないよう、
+固定サイズのループバックイメージ（ext4でフォーマットしたファイル）を用意し、そこにマウントして容量上限を強制します。
 
-`.hermes`（dashboardデータ）と`.hermes-web`（web資産）は同じイメージ・同じマウント先
-（`./.hermes-data`）を共有し、その下のサブディレクトリとして分けます。
+`.hermes`（dashboardデータ）と`.hermes-web`（web資産）は同じイメージ・同じマウント先（`./.hermes-data`）を共有し、
+その下のサブディレクトリとして分けます。
 
 - `./.hermes-data/hermes` → コンテナの `/opt/data`
 - `./.hermes-data/web` → コンテナの `/opt/hermes/web`
 
 `tmpfs`やDocker volumeの`--storage-opt size=`ではなくループバックイメージを選んだ理由:
-このデータ（dashboardの設定・履歴・web資産）はコンテナ再起動やホスト再起動をまたいで
-永続化する必要があり、これは`tmpfs`（RAM上に載るため再起動で消える）では満たせません。
-`--storage-opt size=`も検討しましたが、これはバッキングファイルシステムがXFS＋project
-quota（または`tmpfs`タイプのvolume）の場合しか使えず、本リポジトリの動作確認環境である
-ext4では利用できません。ループバックのext4イメージであればホスト側のファイルシステムに
-依存せず、ディスクに永続化できます。
+このデータ（dashboardの設定・履歴・web資産）はコンテナ再起動やホスト再起動をまたいで永続化する必要があり、
+これは`tmpfs`（RAM上に載るため再起動で消える）では満たせません。
+`--storage-opt size=`も検討しましたが、これはバッキングファイルシステムがXFS＋project quota
+（または`tmpfs`タイプのvolume）の場合しか使えず、本リポジトリの動作確認環境であるext4では利用できません。
+ループバックのext4イメージであればホスト側のファイルシステムに依存せず、ディスクに永続化できます。
 
 ## 初回セットアップ
 
@@ -154,8 +153,7 @@ cp config.yaml .hermes-data/hermes/
 
 ## 起動のたびに必要なこと
 
-ループマウントはホスト再起動やアンマウントで消えるため、`docker compose up`の前に
-マウントされているか確認します。
+ループマウントはホスト再起動やアンマウントで消えるため、`docker compose up`の前にマウントされているか確認します。
 
 ```bash
 mountpoint -q .hermes-data || sudo mount -o loop .hermes-data.img .hermes-data
@@ -164,8 +162,7 @@ mountpoint -q .hermes-data || sudo mount -o loop .hermes-data.img .hermes-data
 ## 再起動時に自動マウントしたい場合（任意）
 
 `/etc/fstab`は絶対パスしか書けないため、リポジトリのルートで以下を実行して
-現在地から絶対パスを組み立てて追記します（`nofail`でイメージが無い場合も起動を
-止めない）。
+現在地から絶対パスを組み立てて追記します（`nofail`でイメージが無い場合も起動を止めない）。
 
 ```bash
 echo "$(pwd)/.hermes-data.img $(pwd)/.hermes-data ext4 loop,nofail 0 0" | sudo tee -a /etc/fstab
@@ -188,15 +185,14 @@ mountpoint .hermes-data
 
 ## 容量を使い切ったら
 
-イメージ内の10GBを使い切ると、コンテナ側の書き込みが失敗します（ホストディスクは
-無事です）。空き容量確認:
+イメージ内の10GBを使い切ると、コンテナ側の書き込みが失敗します（ホストディスクは無事です）。
+空き容量確認:
 
 ```bash
 df -h .hermes-data
 ```
 
-拡張したい場合は、コンテナを止めてアンマウントした上で`truncate`と`resize2fs`で
-イメージを拡張します。
+拡張したい場合は、コンテナを止めてアンマウントした上で`truncate`と`resize2fs`でイメージを拡張します。
 
 ```bash
 sudo umount .hermes-data
@@ -209,15 +205,25 @@ sudo mount -o loop .hermes-data.img .hermes-data
 # 環境変数の設定
 
 `docker-compose.yml` は `HERMES_DASHBOARD_BASIC_AUTH_USERNAME`/`PASSWORD` を必須項目にしているため、
-`docker compose` は `build` を含むどのサブコマンドでも `hermes` サービスの環境変数も含めてファイル
-全体を検証します。`.env.sample`には`COMPOSE_FILE`も設定済みで、これは`docker compose`が`.env`から
-自動で読み込みます（変数展開用途だけではありません）。毎回exportする代わりにサンプルをコピーして
-認証情報を編集してください。
+`docker compose` は `build` を含むどのサブコマンドでも `hermes` サービスの環境変数も含めてファイル全体を検証します。
+`.env.sample`には`COMPOSE_FILE`も設定済みで、これは`docker compose`が`.env`から自動で読み込みます（変数展開用途だけではありません）。
+毎回exportする代わりにサンプルをコピーして認証情報を編集してください。
 
 ```bash
 cp .env.sample .env
 $EDITOR .env  # 自分のusername/passwordを設定
 ```
+
+`.env.sample`では`COMPOSE_FILE`がE4Bモデルのデフォルト構成（単一スロット）である`compose.e4b-qat.yml`を指しています。
+本リポジトリには2並列スロットで動かす`compose.e4b-qat-np2.yml`も同梱しているので、
+使いたい場合は`.env`の`COMPOSE_FILE`を書き換えてください。
+
+```
+COMPOSE_FILE=docker-compose.yml:compose.e4b-qat-np2.yml
+```
+
+使う前に[healthcheck / supervisor について](#healthcheck--supervisor-について)の「既知の穴」を確認してください。
+ストール検知のwatchdogに2スロット構成特有の見落としがあります。
 
 # build
 ```bash
@@ -235,12 +241,30 @@ docker compose up -d
 `/health` が OK を返し続けたまま推論スロットがハングする現象が起こりました。
 同様の報告されています（[llama.cpp#20921](https://github.com/ggml-org/llama.cpp/issues/20921)）。
 issueはクローズ済みですが、根本原因の特定や有効性が確認された修正・回避策はなく、間欠的に再発しうる状態です。
-そのため本リポジトリでは `/slots` エンドポイントの進捗（`id_task` / `n_prompt_tokens_processed` / `n_decoded` のいずれかが動いていれば健全）を監視し、ハングを検知したらコンテナごと再起動する方式（`healthcheck-slots.sh` / `supervisor.sh`）で対応しています。
+そのため本リポジトリでは `/slots` エンドポイントの進捗（`id_task` / `n_prompt_tokens_processed` / `n_decoded` のいずれかが動いていれば健全）を監視し、
+ハングを検知したらコンテナごと再起動する方式（`healthcheck-slots.sh` / `supervisor.sh`）で対応しています。
 
 `/slots` は正常な prefill 中でも最大48秒程度タイムアウトすることがあります（`/health` は即座に応答するため区別可能）。
 そのため単発のタイムアウトでは判定せず、応答が `SLOT_STALL_SECONDS` 秒（既定180秒）まったく返らない場合のみ unhealthy とします。
 
-`supervisor.sh` は llama-server を子プロセスとして起動し、上記のストールを検知したら子プロセスを SIGKILL してコンテナごと終了させます（`restart: unless-stopped` により compose が作り直します）。
+### 既知の穴: `compose.e4b-qat-np2.yml`（`-np 2`）はハングを見逃すことがある
+
+このwatchdogは`/slots`のレスポンス全体から1本のfingerprint（全スロットの`id_task` / `n_prompt_tokens_processed` / `n_decoded`をまとめて連結したもの）を作っており、
+スロットごとには追跡していません。
+
+**見逃す条件は具体的に1つだけです: スロットAがハングしている間、
+スロットBが`SLOT_STALL_SECONDS`の間ずっとリクエストを受け続けて動いている場合。**
+fingerprintは両スロットを連結したものなので、Bのフィールドが毎回変わり続ける限り、
+連結後のfingerprint全体も変化し続けてタイマーが一度もリセットされず満了しません。
+結果としてAのハングは永久に気付かれません。
+逆にBが無処理（idle）であれば、連結fingerprintは静止するので従来通り正しく検知できます。
+穴が開くのは「健全な方のスロットがずっと稼働し続けている」場合だけです。
+
+`compose.e4b-qat-np2.yml`を使う場合はこれを念頭に置いてください。
+特に両スロットが常時ビジーになりうる継続的なトラフィックがある構成では注意が必要です。
+
+`supervisor.sh` は llama-server を子プロセスとして起動し、
+上記のストールを検知したら子プロセスを SIGKILL してコンテナごと終了させます（`restart: unless-stopped` により compose が作り直します）。
 `docker.sock` を使わない設計にしているのは、ソケットの共有がホスト root 相当の権限を渡すことになるためです。
 また llama-server を PID 1 ではなく子プロセスとして起動しているため、内部からの SIGKILL で確実に終了させられます。
 

@@ -1,0 +1,18 @@
+services:
+  llama-server:
+    command: >
+      -m /models/gemma-4-E4B-it-qat/gemma-4-E4B-it-qat-UD-Q4_K_XL.gguf
+      --no-mmproj-offload
+      --mmproj /models/gemma-4-E4B-it-qat/mmproj-F16.gguf
+      -np 2
+      -c 128000
+      -lv 4
+      --host 0.0.0.0
+      --port 8080
+      -ctk f16
+      -ctv f16
+      -ngl 43
+      --no-op-offload
+      -md /models/gemma-4-E4B-it-qat/mtp-gemma-4-E4B-it.gguf --spec-type draft-mtp
+      --spec-draft-ngl all
+      --spec-draft-n-max 2

@@ -217,6 +217,17 @@ cp .env.sample .env
 $EDITOR .env  # set your own username/password
 ```
 
+`.env.sample` points `COMPOSE_FILE` at `compose.e4b-qat.yml`, the default single-slot config for the E4B
+model. This repo also ships `compose.e4b-qat-np2.yml`, which runs two parallel slots instead — swap it in
+by editing `COMPOSE_FILE` in `.env`:
+
+```
+COMPOSE_FILE=docker-compose.yml:compose.e4b-qat-np2.yml
+```
+
+See "Known gap" under [About the healthcheck / supervisor](#about-the-healthcheck--supervisor) before
+using it — the stall watchdog has a blind spot with two slots.
+
 # Build
 ```bash
 docker compose build llama-server
@@ -240,6 +251,22 @@ whole container when a hang is detected (`healthcheck-slots.sh` / `supervisor.sh
 `/slots` can time out for up to ~48 seconds even during normal prefill (distinguishable because `/health`
 still responds instantly). So a single timeout is not treated as a failure — only when there has been no
 response at all for `SLOT_STALL_SECONDS` seconds (default 180) is it marked unhealthy.
+
+### Known gap: `compose.e4b-qat-np2.yml` (`-np 2`) can miss a hung slot
+
+The watchdog builds a single progress fingerprint from the whole `/slots` response (`id_task` /
+`n_prompt_tokens_processed` / `n_decoded` of every slot concatenated together) rather than tracking each
+slot separately.
+
+**This misses a hang under one specific condition: slot A hangs while slot B keeps continuously receiving
+and processing requests for the entire `SLOT_STALL_SECONDS` window.** Because the fingerprint concatenates
+both slots, slot B's fields keep changing every poll, so the combined fingerprint never goes stale and the
+timer never fires — slot A's hang goes unnoticed indefinitely. If slot B is idle (not processing) instead,
+the aggregate fingerprint IS static and the hang is still detected correctly as before; the gap only opens
+when the healthy slot is kept busy throughout.
+
+If you use `compose.e4b-qat-np2.yml`, keep this in mind, especially under sustained/always-on traffic where
+both slots may be busy back-to-back.
 
 `supervisor.sh` runs llama-server as a child process; once it detects the stall above, it SIGKILLs the
 child and exits, taking the container down (`restart: unless-stopped` lets compose recreate it). It
