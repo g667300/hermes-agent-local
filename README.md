@@ -225,8 +225,10 @@ by editing `COMPOSE_FILE` in `.env`:
 COMPOSE_FILE=docker-compose.yml:compose.e4b-qat-np2.yml
 ```
 
-See "Known gap" under [About the healthcheck / supervisor](#about-the-healthcheck--supervisor) before
-using it — the stall watchdog has a blind spot with two slots.
+Under concurrent load, total throughput is considerably higher this way — about 74 tok/s combined vs 63.3
+tok/s for a single stream (see the benchmark table under
+[About the healthcheck / supervisor](#about-the-healthcheck--supervisor)). Read that section before
+using it, though — the "Known gap" part covers a blind spot the stall watchdog has with two slots.
 
 # Build
 ```bash

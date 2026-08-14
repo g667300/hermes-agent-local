@@ -222,8 +222,10 @@ $EDITOR .env  # 自分のusername/passwordを設定
 COMPOSE_FILE=docker-compose.yml:compose.e4b-qat-np2.yml
 ```
 
-使う前に[healthcheck / supervisor について](#healthcheck--supervisor-について)の「既知の穴」を確認してください。
-ストール検知のwatchdogに2スロット構成特有の見落としがあります。
+並列負荷時の合計スループットはかなり速くなります。単一ストリームの63.3 tok/sに対し、2並列合計では約74 tok/s出ます
+（詳細は[healthcheck / supervisor について](#healthcheck--supervisor-について)のベンチマーク表を参照）。
+ただし使う前にそのセクションは確認してください。
+「既知の穴」として、ストール検知のwatchdogに2スロット構成特有の見落としがある点も載せています。
 
 # build
 ```bash
