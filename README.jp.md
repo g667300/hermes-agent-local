@@ -101,9 +101,95 @@ models/gemma-4-E4B-it-qat/
 ```
 
 # 初期設定
+
+`./.hermes-data`はただのbind mountなので、docker-compose側の設定だけではサイズ上限を
+掛けられません。Hermesが暴走してログ/DBを書き続けてもホストディスクを食い潰さないよう、
+固定サイズのループバックイメージ（ext4でフォーマットしたファイル）を用意し、そこに
+マウントして容量上限を強制します。
+
+`.hermes`（dashboardデータ）と`.hermes-web`（web資産）は同じイメージ・同じマウント先
+（`./.hermes-data`）を共有し、その下のサブディレクトリとして分けます。
+
+- `./.hermes-data/hermes` → コンテナの `/opt/data`
+- `./.hermes-data/web` → コンテナの `/opt/hermes/web`
+
+## 初回セットアップ
+
 ```bash
-mkdir .hermes
-cp config.yaml .hermes/
+# 1. 固定サイズのスパースイメージを作成（必要に応じてサイズ変更）
+truncate -s 10G .hermes-data.img
+
+# 2. ext4でフォーマット
+mkfs.ext4 -q .hermes-data.img
+
+# 3. マウントポイント作成
+mkdir -p .hermes-data
+
+# 4. ループマウント（root権限が必要）
+sudo mount -o loop .hermes-data.img .hermes-data
+
+# 5. 自分の所有に変更（コンテナ起動ユーザーが書き込めるように）
+sudo chown "$(id -u):$(id -g)" .hermes-data
+
+# 6. サブディレクトリを作成
+mkdir -p .hermes-data/hermes .hermes-data/web
+
+# 7. 設定ファイルを配置
+cp config.yaml .hermes-data/hermes/
+```
+
+## 起動のたびに必要なこと
+
+ループマウントはホスト再起動やアンマウントで消えるため、`docker compose up`の前に
+マウントされているか確認します。
+
+```bash
+mountpoint -q .hermes-data || sudo mount -o loop .hermes-data.img .hermes-data
+```
+
+## 再起動時に自動マウントしたい場合（任意）
+
+`/etc/fstab`は絶対パスしか書けないため、リポジトリのルートで以下を実行して
+現在地から絶対パスを組み立てて追記します（`nofail`でイメージが無い場合も起動を
+止めない）。
+
+```bash
+echo "$(pwd)/.hermes-data.img $(pwd)/.hermes-data ext4 loop,nofail 0 0" | sudo tee -a /etc/fstab
+```
+
+追記した内容の確認:
+
+```bash
+grep hermes-data /etc/fstab
+```
+
+再起動せずに`fstab`の記述だけを検証したい場合は、一度アンマウントしてから
+`mount -a`で`fstab`経由の再マウントを試します。
+
+```bash
+sudo umount .hermes-data
+sudo mount -a
+mountpoint .hermes-data
+```
+
+## 容量を使い切ったら
+
+イメージ内の10GBを使い切ると、コンテナ側の書き込みが失敗します（ホストディスクは
+無事です）。空き容量確認:
+
+```bash
+df -h .hermes-data
+```
+
+拡張したい場合は、コンテナを止めてアンマウントした上で`truncate`と`resize2fs`で
+イメージを拡張します。
+
+```bash
+sudo umount .hermes-data
+truncate -s 20G .hermes-data.img
+e2fsck -f .hermes-data.img
+resize2fs .hermes-data.img
+sudo mount -o loop .hermes-data.img .hermes-data
 ```
 
 # 環境変数の設定

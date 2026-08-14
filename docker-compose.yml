@@ -9,7 +9,7 @@ services:
       - WATCH_START_PERIOD=120    # grace period right after startup (model loading)
       - SLOT_STALL_SECONDS=180    # stall-detection threshold (defaults unverified, see README)
     volumes:
-      - ./models:/models
+      - ./models:/models:ro
     healthcheck:
       test: ["CMD", "sh", "/healthcheck-slots.sh"]
       interval: 30s
@@ -21,7 +21,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 8g
+          memory: 5g
         reservations:
           memory: 2g
           devices:
@@ -42,8 +42,8 @@ services:
       - HERMES_DASHBOARD_BASIC_AUTH_USERNAME=${HERMES_DASHBOARD_BASIC_AUTH_USERNAME:?set it in .env}
       - HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${HERMES_DASHBOARD_BASIC_AUTH_PASSWORD:?set it in .env}
     volumes:
-      - ./.hermes:/opt/data
-      - ./.hermes-web:/opt/hermes/web
+      - ./.hermes-data/hermes:/opt/data
+      - ./.hermes-data/web:/opt/hermes/web
     networks:
       - llm-net
       - hermes-net
@@ -52,7 +52,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 8g
+          memory: 4g
 networks:
   llm-net:
     driver: bridge

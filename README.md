@@ -102,9 +102,93 @@ models/gemma-4-E4B-it-qat/
 ```
 
 # Initial setup
+
+`./.hermes-data` is just a plain bind mount, so a size cap can't be set through Docker Compose
+alone. To keep a runaway `hermes` container from filling up the host disk with logs/DB writes, back
+it with a fixed-size loopback image (an ext4-formatted file) instead, and mount that.
+
+`.hermes` (dashboard data) and `.hermes-web` (web assets) share the same image and the same mount
+point (`./.hermes-data`), split into subdirectories underneath it:
+
+- `./.hermes-data/hermes` → the container's `/opt/data`
+- `./.hermes-data/web` → the container's `/opt/hermes/web`
+
+## First-time setup
+
 ```bash
-mkdir .hermes
-cp config.yaml .hermes/
+# 1. Create a fixed-size sparse image (resize as needed)
+truncate -s 10G .hermes-data.img
+
+# 2. Format as ext4
+mkfs.ext4 -q .hermes-data.img
+
+# 3. Create the mount point
+mkdir -p .hermes-data
+
+# 4. Loop-mount it (requires root)
+sudo mount -o loop .hermes-data.img .hermes-data
+
+# 5. Chown it to yourself (so the container's runtime user can write to it)
+sudo chown "$(id -u):$(id -g)" .hermes-data
+
+# 6. Create the subdirectories
+mkdir -p .hermes-data/hermes .hermes-data/web
+
+# 7. Place the config file
+cp config.yaml .hermes-data/hermes/
+```
+
+## Before every startup
+
+Loop mounts don't survive a host reboot or an unmount, so check it's mounted before `docker
+compose up`:
+
+```bash
+mountpoint -q .hermes-data || sudo mount -o loop .hermes-data.img .hermes-data
+```
+
+## Auto-mounting on reboot (optional)
+
+`/etc/fstab` only accepts absolute paths, so run this from the repo root to build the absolute
+path from the current directory and append it (`nofail` keeps boot from stalling if the image is
+missing):
+
+```bash
+echo "$(pwd)/.hermes-data.img $(pwd)/.hermes-data ext4 loop,nofail 0 0" | sudo tee -a /etc/fstab
+```
+
+Verify what got appended:
+
+```bash
+grep hermes-data /etc/fstab
+```
+
+To test the `fstab` entry without rebooting, unmount and then let `mount -a` remount it via
+`fstab`:
+
+```bash
+sudo umount .hermes-data
+sudo mount -a
+mountpoint .hermes-data
+```
+
+## When the image fills up
+
+Once the 10GB image is full, writes from the container fail (the host disk itself is unaffected).
+Check free space:
+
+```bash
+df -h .hermes-data
+```
+
+To grow it, stop the container, unmount, then extend the image with `truncate` and `resize2fs`:
+
+```bash
+sudo umount .hermes-data
+truncate -s 20G .hermes-data.img
+e2fsck -f .hermes-data.img
+resize2fs .hermes-data.img
+sudo mount -o loop .hermes-data.img .hermes-data
 ```
 
 # Configure the environment
