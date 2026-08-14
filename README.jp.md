@@ -218,8 +218,7 @@ cp .env.sample .env
 $EDITOR .env  # 自分のusername/passwordを設定
 ```
 
-`COMPOSE_FILE`（どのモデル構成を使うか選ぶ変数）は`run.sh` / `run-12b.sh`が自前でexportするので、
-シェルごとに以下は引き続き必要です。
+`COMPOSE_FILE`はシェルごとに引き続き以下のexportが必要です。
 
 ```bash
 export COMPOSE_FILE=docker-compose.yml:compose.e4b-qat.yml

@@ -216,8 +216,7 @@ cp .env.sample .env
 $EDITOR .env  # set your own username/password
 ```
 
-`COMPOSE_FILE` still needs to be exported per shell (it selects which model variant to run), since
-`run.sh` / `run-12b.sh` set it themselves:
+`COMPOSE_FILE` still needs to be exported per shell:
 
 ```bash
 export COMPOSE_FILE=docker-compose.yml:compose.e4b-qat.yml
