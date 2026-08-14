@@ -53,6 +53,7 @@ services:
       resources:
         limits:
           memory: 4g
+          cpus: "2"
 networks:
   llm-net:
     driver: bridge

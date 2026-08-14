@@ -1,3 +1,4 @@
 .hermes-data/
 .hermes-data.img
 models/
+.env
