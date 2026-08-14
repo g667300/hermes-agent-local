@@ -252,6 +252,22 @@ whole container when a hang is detected (`healthcheck-slots.sh` / `supervisor.sh
 still responds instantly). So a single timeout is not treated as a failure — only when there has been no
 response at all for `SLOT_STALL_SECONDS` seconds (default 180) is it marked unhealthy.
 
+### Benchmark: `-np 1` vs `-np 2`
+
+Measured on this repo's tested hardware (Quadro P2200, 5GB VRAM) with a fresh, uncached prompt:
+
+| Config | VRAM used | Prefill | Decode |
+|---|---|---|---|
+| `-np 1 -c 64000 -ngl auto` (`compose.e4b-qat.yml`, default) | 3926 MiB | 17.0 tok/s | 61.2 tok/s |
+| `-np 2 -c 128000 -ngl 43`, single stream | 4818 MiB | 17.4 tok/s | 63.3 tok/s |
+| `-np 2 -c 128000 -ngl 43`, 2 concurrent streams (total / per-stream avg) | 4950 MiB | 220.0 / 110.0 tok/s | 74.0 / 37.0 tok/s |
+
+The 2-concurrent-streams row is two simultaneous requests actually sharing both slots. Per-stream decode
+drops to ~37 tok/s each, but total throughput across both streams is ~74 tok/s — more than the single-slot
+baseline's 63.3 tok/s, which is the point of running two slots. The prefill numbers there aren't a clean
+comparison (short 22/29-token prompts, one with a partial cache hit) — included for reference, not as a
+head-to-head prefill benchmark.
+
 ### Known gap: `compose.e4b-qat-np2.yml` (`-np 2`) can miss a hung slot
 
 The watchdog builds a single progress fingerprint from the whole `/slots` response (`id_task` /
