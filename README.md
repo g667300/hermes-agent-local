@@ -230,6 +230,21 @@ tok/s for a single stream (see the benchmark table under
 [About the healthcheck / supervisor](#about-the-healthcheck--supervisor)). Read that section before
 using it, though — the "Known gap" part covers a blind spot the stall watchdog has with two slots.
 
+E4B is the primary model for this repo. `compose.12b.yml` / `compose.12b-np2.yml` are reference configs
+for the 12B model, with MTP speculative decoding enabled (`-md` / `--spec-type draft-mtp`). Measured on
+this repo's hardware, it's a clear win — roughly +60–100% generation speed depending on the prompt:
+
+| Config | MTP off | MTP on (`--spec-draft-n-max 4`) |
+|---|---|---|
+| `compose.12b.yml` (`-np 1`), `code`/`prose_ja` prompts | ~6.9 tok/s (`-ngl 28`) | ~12.0–12.6 tok/s (`-ngl 24`) |
+| `compose.12b.yml` (`-np 1`), `factual` prompt | ~7.0 tok/s (`-ngl 28`) | ~8.6 tok/s (`-ngl 24`) |
+| `compose.12b-np2.yml` (`-np 2`, single stream), `code`/`prose_ja` prompts | ~5.9–6.0 tok/s (`-ngl 23`) | ~10.5–10.8 tok/s (`-ngl 19`) |
+| `compose.12b-np2.yml` (`-np 2`, single stream), `factual` prompt | ~5.2 tok/s (`-ngl 23`) | ~6.4 tok/s (`-ngl 19`) |
+
+The gain is prompt-dependent — larger for prompts with more locally-predictable continuations (code, or
+text with repeated structure), smaller for open-ended factual/prose prompts. Measured with `temperature=0`,
+`top_k=1`, `n_predict=256`, uncached prompts, `timings.predicted_per_second` from `/completion`.
+
 # Build
 ```bash
 docker compose build llama-server

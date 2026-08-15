@@ -1,0 +1,20 @@
+services:
+  llama-server:
+    command: >
+      -m /models/gemma-4-12B-it-qat/gemma-4-12B-it-qat-UD-Q4_K_XL.gguf
+      --no-mmproj-offload
+      --mmproj /models/gemma-4-12B-it-qat/mmproj-F16.gguf
+      --api-key ${LLAMA_CPP_API_KEY:?set it in .env}
+      -np 1
+      -c 64000
+      -lv 4
+      --host 0.0.0.0
+      --port 8080
+      -ctk f16
+      -ctv f16
+      -ngl 24
+      --no-op-offload
+      -md /models/gemma-4-12B-it-qat/mtp-gemma-4-12B-it.gguf
+      --spec-type draft-mtp
+      --spec-draft-ngl all
+      --spec-draft-n-max 4
