@@ -227,23 +227,6 @@ COMPOSE_FILE=docker-compose.yml:compose.e4b-qat-np2.yml
 ただし使う前にそのセクションは確認してください。
 「既知の穴」として、ストール検知のwatchdogに2スロット構成特有の見落としがある点も載せています。
 
-本リポジトリの本命はE4Bですが、`compose.12b.yml` / `compose.12b-np2.yml` を12Bモデルの参考構成として同梱しています。
-両ファイルともMTPによる投機的デコード（`-md` / `--spec-type draft-mtp`）を有効にしています。
-本リポジトリのハードウェアで計測したところ明確な効果があり、
-プロンプトによって生成速度がおよそ+60〜100%向上します:
-
-| 構成 | MTP無効 | MTP有効（`--spec-draft-n-max 4`） |
-|---|---|---|
-| `compose.12b.yml`（`-np 1`）、`code`/`prose_ja` プロンプト | 約6.9 tok/s（`-ngl 28`） | 約12.0〜12.6 tok/s（`-ngl 24`） |
-| `compose.12b.yml`（`-np 1`）、`factual` プロンプト | 約7.0 tok/s（`-ngl 28`） | 約8.6 tok/s（`-ngl 24`） |
-| `compose.12b-np2.yml`（`-np 2`、単一ストリーム）、`code`/`prose_ja` プロンプト | 約5.9〜6.0 tok/s（`-ngl 23`） | 約10.5〜10.8 tok/s（`-ngl 19`） |
-| `compose.12b-np2.yml`（`-np 2`、単一ストリーム）、`factual` プロンプト | 約5.2 tok/s（`-ngl 23`） | 約6.4 tok/s（`-ngl 19`） |
-
-効果の大きさはプロンプト依存で、コードのように局所的に予測しやすい続きがあるプロンプトほど大きく、
-自由記述の事実説明のようなプロンプトほど小さくなります。
-計測条件は `temperature=0`、`top_k=1`、`n_predict=256`、キャッシュなしプロンプト、
-`/completion` の `timings.predicted_per_second` を使用しています。
-
 # build
 ```bash
 docker compose build llama-server
@@ -327,3 +310,35 @@ fingerprintは両スロットを連結したものなので、Bのフィール�
 | `SLOT_STATE_FILE` | `/tmp/llama-slots-watch` | 進捗を記録する状態ファイル |
 | `LLAMA_SLOTS_FIXTURE` | (なし) | テスト用。指定するとこのファイルを `/slots` の応答として使う |
 | `LLAMA_BIN` | `/app/llama-server` | llama-server 本体のパス |
+
+# gemma4-12Bの参考構成
+
+ここまではすべてE4B（本リポジトリの本命モデル）についての説明です。
+`compose.12b.yml` / `compose.12b-np2.yml` は、これとは別の、gemma4-12Bモデル向けの参考構成として同梱しています。
+両ファイルともMTPによる投機的デコード（`-md` / `--spec-type draft-mtp`）を有効にしています。
+
+以下の3ファイルをHugging Faceの
+[unsloth/gemma-4-12B-it-qat-GGUF](https://huggingface.co/unsloth/gemma-4-12B-it-qat-GGUF)からダウンロードし、
+上記E4Bと同じgitignore対象の`models/`配下に配置してください。
+
+```
+models/gemma-4-12B-it-qat/
+├── gemma-4-12B-it-qat-UD-Q4_K_XL.gguf   # 本体モデル（4bit動的量子化）
+├── mmproj-F16.gguf                      # マルチモーダル用プロジェクタ
+└── mtp-gemma-4-12B-it.gguf              # Multi-Token Prediction用ドラフトモデル
+```
+
+本リポジトリのハードウェアで計測したところ明確な効果があり、
+プロンプトによって生成速度がおよそ+60〜100%向上します:
+
+| 構成 | MTP無効 | MTP有効（`--spec-draft-n-max 4`） |
+|---|---|---|
+| `compose.12b.yml`（`-np 1`）、`code`/`prose_ja` プロンプト | 約6.9 tok/s（`-ngl 28`） | 約12.0〜12.6 tok/s（`-ngl 24`） |
+| `compose.12b.yml`（`-np 1`）、`factual` プロンプト | 約7.0 tok/s（`-ngl 28`） | 約8.6 tok/s（`-ngl 24`） |
+| `compose.12b-np2.yml`（`-np 2`、単一ストリーム）、`code`/`prose_ja` プロンプト | 約5.9〜6.0 tok/s（`-ngl 23`） | 約10.5〜10.8 tok/s（`-ngl 19`） |
+| `compose.12b-np2.yml`（`-np 2`、単一ストリーム）、`factual` プロンプト | 約5.2 tok/s（`-ngl 23`） | 約6.4 tok/s（`-ngl 19`） |
+
+効果の大きさはプロンプト依存で、コードのように局所的に予測しやすい続きがあるプロンプトほど大きく、
+自由記述の事実説明のようなプロンプトほど小さくなります。
+計測条件は `temperature=0`、`top_k=1`、`n_predict=256`、キャッシュなしプロンプト、
+`/completion` の `timings.predicted_per_second` を使用しています。
